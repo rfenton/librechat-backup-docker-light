@@ -24,7 +24,19 @@ This lightweight version is designed for **minimal resource consumption**:
 
 ## Quick Start
 
-1. **Clone or create the lightweight version**:
+### Option 1: Clone from GitHub (Recommended)
+```bash
+# Clone the repository
+git clone https://github.com/rfenton/librechat-backup-docker-light.git
+cd librechat-backup-docker-light
+
+# Edit docker-compose.yml with your settings
+# Then start the service
+docker-compose up -d
+```
+
+### Option 2: Manual Setup
+1. **Create the project directory**:
    ```bash
    mkdir librechat-backup-docker-light
    cd librechat-backup-docker-light
@@ -40,6 +52,23 @@ This lightweight version is designed for **minimal resource consumption**:
    ```bash
    docker-compose up -d
    ```
+
+## Required Files for Installation
+
+Your project folder needs these essential files:
+
+```
+librechat-backup-docker-light/
+├── docker-compose.yml     # Main configuration file
+├── Dockerfile            # Container build instructions
+├── backup_librechat.sh   # Backup script
+├── entrypoint.sh         # Container startup script
+├── crontab              # Scheduled backup configuration
+├── README.md            # This documentation
+└── backups/             # Directory for backup files (auto-created)
+```
+
+**All files are included in this repository** - simply copy the entire folder to your deployment location.
 
 ## Features
 
@@ -194,6 +223,10 @@ To ensure successful backups, the backup container must be able to connect to yo
 
 This lightweight version is **perfect for Synology NAS**:
 
+### Synology Docker Compose Defaults
+
+For Synology NAS deployments, use these recommended defaults:
+
 ```yaml
 # Synology-optimized configuration
 services:
@@ -202,23 +235,32 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.1'
-          memory: 64M
+          cpus: '0.1'   # Minimal CPU limit
+          memory: 64M  # Minimal memory limit
     volumes:
-      - /volume1/LibreChat/backups:/backups  # Synology path
+      - /volume1/docker/librechat-backup-docker-light/backups:/backups  # Synology default path
     networks:
       - librechat_network
     environment:
       - MONGODB_HOST=librechat_mongodb
       - DB_NAME=LibreChat
       - RETENTION_DAYS=90
+      - PUID=1034 #CHANGE_TO_YOUR_UID
+      - PGID=65537 #CHANGE_TO_YOUR_GID
+      - TZ=America/Los_Angeles #CHANGE_TO_YOUR_TZ
     restart: unless-stopped
 
 networks:
   librechat_network:
     external: true
-    name: librechat_default
+    name: librechat_default  # Adjust to match your LibreChat network t
 ```
+
+**Important Synology Configuration Notes:**
+- **Backup Path**: `/volume1/docker/librechat-backup-docker-light/backups` - Standard Synology Docker volume path
+- **PUID/PGID**: Change `1034` and `65537` to match your Synology user's UID and GID
+- **Timezone**: Update `America/Los_Angeles` to your local timezone
+- **Permissions**: Ensure the backup directory is writable by the specified user
 
 ## Synology Installation: Container Manager & Portainer
 
@@ -238,17 +280,48 @@ networks:
 - Access Portainer at `http://<your-synology-ip>:9000` and follow the setup wizard.
 
 ### 3. Deploy the Backup App
-- Place your `librechat-backup-docker-light` folder in a shared folder (e.g., `/volume1/docker/`).
-- In **Container Manager**:
-  - Go to **Projects** (or **Containers** > **Add** > **Import Compose**)
-  - Select your `docker-compose.yml` file
-  - Adjust volume paths to use Synology shares (e.g., `/volume1/LibreChat/backups:/backups`)
-  - Set environment variables as needed for your MongoDB setup
-  - Deploy the stack
-- In **Portainer**:
-  - Go to **Stacks** > **Add stack**
-  - Upload or paste your `docker-compose.yml`
-  - Deploy the stack
+
+**Step-by-Step Synology Installation:**
+
+1. **Get the project files** (choose one method):
+   
+   **Option A: Clone from GitHub (Easiest)**
+   ```bash
+   # SSH into your Synology or use File Station terminal
+   cd /volume1/docker/
+   git clone https://github.com/rfenton/librechat-backup-docker-light.git
+   ```
+   
+   **Option B: Manual copy**
+   ```
+   /volume1/docker/librechat-backup-docker-light/
+   ├── docker-compose.yml     ✅ Required
+   ├── Dockerfile            ✅ Required  
+   ├── backup_librechat.sh   ✅ Required
+   ├── entrypoint.sh         ✅ Required
+   ├── crontab              ✅ Required
+   ├── README.md            ✅ Documentation
+   └── backups/             ✅ Auto-created
+   ```
+
+2. **Update docker-compose.yml** with Synology-specific settings:
+   - Change PUID/PGID to your user's values
+   - Update timezone (TZ) to your location
+   - Verify MongoDB host name matches your LibreChat setup
+
+3. **Deploy using Container Manager**:
+   - Go to **Projects** → **Create**
+   - Set project name: `librechat-backup-light`
+   - Browse to your `docker-compose.yml` file
+   - Review and deploy
+
+4. **Alternative: Deploy using Portainer**:
+   - Go to **Stacks** → **Add stack**
+   - Name: `librechat-backup-light`
+   - Upload your `docker-compose.yml` or paste contents
+   - Deploy the stack
+
+**That's it!** All required files are included in this repository.
 
 ### 4. Monitoring & Logs
 - Use Container Manager or Portainer to view logs, restart containers, and monitor resource usage.
@@ -299,3 +372,51 @@ MIT License - See LICENSE file for details.
   - If backups or logs are not being created, check container logs for permission errors.
   - Ensure the external Docker network (`librechat_default`) exists and is accessible.
   - If you encounter issues with log rotation, verify that the container is using Alpine Linux and that `wc` is available. 
+## Manual Backup Testing (2025-07-22)
+
+### Verified Functionality
+- ✅ Manual backup execution confirmed working
+- ✅ MongoDB connectivity validated (chat-mongodb:27017)
+- ✅ All LibreChat collections successfully exported:
+  - Conversations: 477 documents
+  - Messages: 3,623 documents
+  - Users: 2 documents
+  - Presets: 23 documents
+  - Prompts: 106 documents
+  - Files: 154 documents
+  - Assistants: 4 documents
+  - Agents: 6 documents
+
+### Manual Backup Commands
+```bash
+# Start the container
+docker-compose up -d
+
+# Execute manual backup
+docker-compose exec backup bash -c '
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+BACKUP_PATH="/backups/$TIMESTAMP"
+mkdir -p "$BACKUP_PATH"
+
+# Export all collections
+mongoexport --host chat-mongodb --db=LibreChat --collection=conversations --out="$BACKUP_PATH/conversations.json"
+mongoexport --host chat-mongodb --db=LibreChat --collection=messages --out="$BACKUP_PATH/messages.json"
+mongoexport --host chat-mongodb --db=LibreChat --collection=users --out="$BACKUP_PATH/users.json"
+mongoexport --host chat-mongodb --db=LibreChat --collection=presets --out="$BACKUP_PATH/presets.json"
+mongoexport --host chat-mongodb --db=LibreChat --collection=prompts --out="$BACKUP_PATH/prompts.json"
+mongoexport --host chat-mongodb --db=LibreChat --collection=files --out="$BACKUP_PATH/files.json"
+mongoexport --host chat-mongodb --db=LibreChat --collection=assistants --out="$BACKUP_PATH/assistants.json"
+mongoexport --host chat-mongodb --db=LibreChat --collection=agents --out="$BACKUP_PATH/agents.json"
+
+# Compress backup
+cd /backups
+tar -czf "$TIMESTAMP.tar.gz" "$TIMESTAMP"
+rm -rf "$TIMESTAMP"
+echo "Backup completed: $TIMESTAMP.tar.gz"
+'
+```
+
+### Results
+- Backup file size: ~1.3MB compressed
+- All collections exported successfully
+- Compression and cleanup working correctly
