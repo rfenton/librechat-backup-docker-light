@@ -1,0 +1,34 @@
+services:
+  backup:
+    build: .
+    container_name: librechat-backup-light
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'      # Minimal CPU limit
+          memory: 64M      # Minimal memory limit
+        reservations:
+          cpus: '0.01'
+          memory: 16M
+    volumes:
+      - ./backups:/backups
+    networks:
+      - librechat_network
+    environment:
+      - MONGODB_HOST=chat-mongodb
+      - MONGODB_PORT=27017
+      - BACKUP_DIR=/backups
+      - DB_NAME=LibreChat
+      - RETENTION_DAYS=90
+    healthcheck:
+      test: ["CMD", "test", "-f", "/var/log/backup.log"]
+      interval: 5m
+      timeout: 5s
+      retries: 2
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  librechat_network:
+    external: true
+    name: librechat_default  # Adjust to match your LibreChat network 
