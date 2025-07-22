@@ -228,15 +228,11 @@ This lightweight version is **perfect for Synology NAS**:
 For Synology NAS deployments, use these recommended defaults:
 
 ```yaml
-# Synology-optimized configuration
+# Synology-optimized configuration (all resource limits removed for compatibility)
 services:
   backup:
     build: .
-    deploy:
-      resources:
-        limits:
-          cpus: '0.1'   # Minimal CPU limit
-          memory: 64M  # Minimal memory limit
+    container_name: librechat-backup-light
     volumes:
       - /volume1/docker/librechat-backup-docker-light/backups:/backups  # Synology default path
     networks:
@@ -248,12 +244,18 @@ services:
       - PUID=1034 #CHANGE_TO_YOUR_UID
       - PGID=65537 #CHANGE_TO_YOUR_GID
       - TZ=America/Los_Angeles #CHANGE_TO_YOUR_TZ
+    healthcheck:
+      test: ["CMD", "test", "-f", "/var/log/backup.log"]
+      interval: 5m
+      timeout: 5s
+      retries: 2
+      start_period: 30s
     restart: unless-stopped
 
 networks:
   librechat_network:
     external: true
-    name: librechat_default  # Adjust to match your LibreChat network t
+    name: librechat_default  # Adjust to match your LibreChat network
 ```
 
 **Important Synology Configuration Notes:**
@@ -344,6 +346,20 @@ networks:
    - Monitor with `docker stats`
    - Adjust memory limits if needed
    - Consider on-demand mode for lowest usage
+
+4. **Synology Resource Limits Error**
+   - **Error**: `NanoCUs can not be set, as your kernel does not support CPU CFS`
+   - **Solution**: Remove ALL resource limits from your docker-compose.yml:
+     ```yaml
+     # Remove the entire deploy section:
+     # deploy:
+     #   resources:
+     #     limits:
+     #       cpus: '0.1'   # Not supported on Synology
+     #       memory: 64M   # Also not supported on Synology
+     ```
+   - Synology's kernel doesn't support resource limits (CPU CFS or memory cgroups)
+   - Use the Synology-optimized configuration provided above (no deploy section)
 
 ## Security
 
