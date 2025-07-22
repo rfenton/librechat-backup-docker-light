@@ -44,14 +44,26 @@ main() {
             continue
         fi
         
-        # Export collection
-        if mongoexport --host "$MONGODB_HOST" --port "$MONGODB_PORT" \
-                      --db="$DB_NAME" --collection="$collection" \
-                      --out="$backup_path/$collection.json" &>/dev/null; then
-            log "✅ Exported $collection ($count documents)"
-            exported_count=$((exported_count + 1))
-        else
-            log "❌ Failed to export $collection"
+        # Export collection with up to 3 retries
+        local retries=0
+        local max_retries=3
+        local export_success=0
+        while [ $retries -lt $max_retries ]; do
+            if mongoexport --host "$MONGODB_HOST" --port "$MONGODB_PORT" \
+                          --db="$DB_NAME" --collection="$collection" \
+                          --out="$backup_path/$collection.json" &>/dev/null; then
+                log "✅ Exported $collection ($count documents)"
+                exported_count=$((exported_count + 1))
+                export_success=1
+                break
+            else
+                log "❌ Failed to export $collection (attempt $((retries+1))/$max_retries)"
+                retries=$((retries + 1))
+                sleep 2
+            fi
+        done
+        if [ $export_success -eq 0 ]; then
+            log "❌ Giving up on $collection after $max_retries attempts"
         fi
     done
     
@@ -77,10 +89,16 @@ main() {
         log "🧹 Cleaned up $deleted_count old backup(s) (>"${RETENTION_DAYS}" days)"
     fi
     
-    # Rotate log file if too large (>1MB)
-    if [ -f "$LOG_FILE" ] && [ $(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0) -gt 1048576 ]; then
+    # Rotate log file if too large (>1MB) using portable wc -c
+    if [ -f "$LOG_FILE" ] && [ $(wc -c < "$LOG_FILE") -gt 1048576 ]; then
         tail -n 100 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
         log "📄 Log file rotated"
+    fi
+
+    # Rotate cron log if too large (>1MB)
+    if [ -f "/var/log/cron.log" ] && [ $(wc -c < "/var/log/cron.log") -gt 1048576 ]; then
+        tail -n 100 "/var/log/cron.log" > "/var/log/cron.log.tmp" && mv "/var/log/cron.log.tmp" "/var/log/cron.log"
+        log "📄 Cron log file rotated"
     fi
     
     log "🎉 Backup process completed successfully"

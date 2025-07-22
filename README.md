@@ -148,6 +148,48 @@ Backups are stored as compressed archives:
 | `BACKUP_DIR` | `/backups` | Backup directory path |
 | `RETENTION_DAYS` | `90` | Days to keep backups |
 
+## Connecting to MongoDB
+
+To ensure successful backups, the backup container must be able to connect to your MongoDB instance. Here’s how to configure and troubleshoot the connection:
+
+### 1. Set the MongoDB Host and Port
+- By default, the backup container expects MongoDB to be available at `chat-mongodb:27017`.
+- If your MongoDB container/service has a different name or runs on a different port, update the following in your `docker-compose.yml`:
+  ```yaml
+  environment:
+    - MONGODB_HOST=your-mongodb-container-name
+    - MONGODB_PORT=your-mongodb-port
+  ```
+
+### 2. Ensure Network Connectivity
+- Both the backup and MongoDB containers **must be on the same Docker network**.
+- Example network section in `docker-compose.yml`:
+  ```yaml
+  networks:
+    - librechat_network
+  ...
+  networks:
+    librechat_network:
+      external: true
+      name: librechat_default  # or your actual network name
+  ```
+- You can list Docker networks with `docker network ls` and inspect with `docker network inspect <network-name>`.
+
+### 3. Troubleshooting
+- If you see repeated messages like `MongoDB not ready, attempt X/10`, the backup container cannot reach MongoDB.
+- Double-check:
+  - The MongoDB container is running and healthy
+  - The network name matches your LibreChat setup
+  - The `MONGODB_HOST` matches the actual container/service name
+  - The port is correct (default is 27017)
+- You can test connectivity from inside the backup container:
+  ```bash
+  docker-compose exec backup sh
+  # Inside the container:
+  mongosh --host $MONGODB_HOST --port $MONGODB_PORT --eval 'db.adminCommand("ping")'
+  ```
+- If you use Synology, ensure both containers are attached to the same user-defined bridge network in Container Manager or Portainer.
+
 ## Synology DiskStation Deployment
 
 This lightweight version is **perfect for Synology NAS**:
@@ -178,6 +220,40 @@ networks:
     name: librechat_default
 ```
 
+## Synology Installation: Container Manager & Portainer
+
+### 1. Install Docker (Container Manager) on Synology
+- Go to **Package Center** > search for **Container Manager** (or **Docker** on older DSM versions) and install it.
+- Open **Container Manager** from the main menu.
+
+### 2. (Optional) Install Portainer for Web UI Management
+- Download the Portainer image:
+  ```bash
+  docker volume create portainer_data
+  docker run -d -p 9000:9000 --name=portainer --restart=always \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v portainer_data:/data \
+    portainer/portainer-ce
+  ```
+- Access Portainer at `http://<your-synology-ip>:9000` and follow the setup wizard.
+
+### 3. Deploy the Backup App
+- Place your `librechat-backup-docker-light` folder in a shared folder (e.g., `/volume1/docker/`).
+- In **Container Manager**:
+  - Go to **Projects** (or **Containers** > **Add** > **Import Compose**)
+  - Select your `docker-compose.yml` file
+  - Adjust volume paths to use Synology shares (e.g., `/volume1/LibreChat/backups:/backups`)
+  - Set environment variables as needed for your MongoDB setup
+  - Deploy the stack
+- In **Portainer**:
+  - Go to **Stacks** > **Add stack**
+  - Upload or paste your `docker-compose.yml`
+  - Deploy the stack
+
+### 4. Monitoring & Logs
+- Use Container Manager or Portainer to view logs, restart containers, and monitor resource usage.
+- You can also use `docker-compose logs -f` from SSH/terminal.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -206,3 +282,20 @@ networks:
 ## License
 
 MIT License - See LICENSE file for details. 
+
+## Synology NAS & Container Manager Notes
+
+- **Volume Permissions:**  
+  If you use a custom Docker user (PUID/PGID), ensure your `/backups` and `/var/log` volumes are writable by that user.  
+  See the commented-out section in the Dockerfile for how to set PUID/PGID.
+
+- **Resource Usage:**  
+  The container is designed to use minimal resources between backups. You can adjust resource limits in `docker-compose.yml` as needed.
+
+- **Log Rotation:**  
+  Both backup and cron logs are automatically rotated if they exceed 1MB.
+
+- **Troubleshooting:**  
+  - If backups or logs are not being created, check container logs for permission errors.
+  - Ensure the external Docker network (`librechat_default`) exists and is accessible.
+  - If you encounter issues with log rotation, verify that the container is using Alpine Linux and that `wc` is available. 
